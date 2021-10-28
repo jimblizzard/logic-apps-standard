@@ -1,0 +1,167 @@
+# Build logic app
+# Azure DevOps yaml pipeline
+
+trigger:
+ branches:
+   include:
+     - main
+   exclude:
+     - docs/*
+     - readme.md
+#  include: 
+#  - none
+ 
+pool:
+  vmImage: ubuntu-latest
+
+
+stages: 
+
+####################################
+- stage: uploadworkflow
+  jobs:
+  - job: uploadpackage
+    displayName: upload package  
+    steps:
+    - checkout: self
+      displayName: Checkout
+    - script: (cd src/LogicAppsStandardDemo; mkdir -p ../../output; zip -r ../../output/workflow.zip .)
+      displayName: Package
+    - publish: ./output/
+      name: workflow
+      displayName: publish workflow package
+
+####################################
+- stage: deploytodev
+  dependsOn: uploadworkflow
+  variables: 
+    ENV_NAME: dev 
+    LA_NAME: mysamplelogicapp-dev
+    RG: logicapp-dev-rg
+    LOCATION: eastus
+    TheDate: nodate
+
+  jobs:
+  - job: deploy_to_dev_job
+    steps:
+    - checkout: self
+      displayName: Checkout source code
+
+    - download:  current
+      artifact: uploadworkflow.uploadpackage
+      displayName: download workflow package
+
+    - bash: |
+        echo 'RG: ' $(RG)
+        echo 'LOCATION: ' $(LOCATION)
+        echo 'ENV_NAME: ' $(ENV_NAME)
+        pwd
+        ls -la
+#        az --version  
+      displayName: show variables and directories
+
+    - task: AzureCLI@2
+      displayName: create resource group
+      inputs:
+        azureSubscription: 'as4b_SP'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          if [ $(az group exists -n $(RG)) = false ]; then
+            az group create -l $(LOCATION) -n $(RG) --tags Environment=$(ENV_NAME)
+          fi 
+
+    - task: AzureCLI@2
+      displayName: update resource group
+      inputs:
+        azureSubscription: 'as4b_SP'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az deployment group create --resource-group $(RG) \
+            --template-file 'src/ArmTemplates/azure.json' \
+            --parameters name=$(LA_NAME) environmentName=$(ENV_NAME) \
+            --mode Incremental
+          
+    - task: AzureFunctionApp@1
+      inputs:
+        azureSubscription: 'as4b_SP'
+        appType: 'functionAppLinux'
+        appName: $(LA_NAME)
+        # package: 'output/workflow.zip'
+        package: '/home/vsts/work/1/uploadworkflow.uploadpackage/workflow.zip'
+
+
+####################################
+- stage: deploytoprod
+  dependsOn: 
+  - uploadworkflow
+  - deploytodev
+  variables: 
+    ENV_NAME: prod
+    LA_NAME: mysamplelogicapp-prod
+    RG: logicapp-prod-rg
+    LOCATION: eastus
+    TheDate: nodate
+
+  jobs:
+  - job: deploy_to_prod_job
+    steps:
+    - checkout: self
+      displayName: Checkout source code
+
+    - download:  current
+      artifact: uploadworkflow.uploadpackage
+      displayName: download workflow package
+
+    - bash: |
+        echo 'RG: ' $(RG)
+        echo 'LOCATION: ' $(LOCATION)
+        echo 'ENV_NAME: ' $(ENV_NAME)
+        pwd
+        ls -la
+#        az --version  
+      displayName: show variables and directories
+
+    - task: AzureCLI@2
+      displayName: create resource group
+      inputs:
+        azureSubscription: 'as4b_SP'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          if [ $(az group exists -n $(RG)) = false ]; then
+            az group create -l $(LOCATION) -n $(RG) --tags Environment=$(ENV_NAME)
+          fi 
+
+    - task: AzureCLI@2
+      displayName: update resource group
+      inputs:
+        azureSubscription: 'as4b_SP'
+        scriptType: 'bash'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          az deployment group create --resource-group $(RG) \
+            --template-file 'src/ArmTemplates/azure.json' \
+            --parameters name=$(LA_NAME) environmentName=$(ENV_NAME) \
+            --mode Incremental
+          
+#    - task: AzurePowerShell@5
+#      inputs:
+#        azureSubscription: 'as4b_SP'
+#        ScriptType: 'InlineScript'
+#        Inline: |
+#          $profile = Get-AzWebAppPublishingProfile `
+#                        -ResourceGroupName $(RG) `
+#                        -Name $(LA_NAME)
+#                    $profile = $profile.Replace("`r", "").Replace("`n", "")
+#                    Write-Output "::set-output name=profile::$profile"
+#        azurePowerShellVersion: 'LatestVersion'
+
+    - task: AzureFunctionApp@1
+      inputs:
+        azureSubscription: 'as4b_SP'
+        appType: 'functionAppLinux'
+        appName: $(LA_NAME)
+        # package: 'output/workflow.zip'
+        package: '/home/vsts/work/1/uploadworkflow.uploadpackage/workflow.zip'
