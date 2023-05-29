@@ -34,7 +34,7 @@ jobs:
     env:
       NAME: dev
       LA_NAME: mysamplelogicapp-dev
-      RG: logicapp-dev
+      RG: logicapp-dev-rg
       LOCATION: eastus
     steps:
     - name: Checkout
@@ -103,7 +103,7 @@ jobs:
     env:
       NAME: prd
       LA_NAME: mysamplelogicapp-prd
-      RG: logicapp-prd
+      RG: logicapp-prd-rg
       LOCATION: eastus
     steps:
     - name: Checkout
